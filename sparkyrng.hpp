@@ -229,9 +229,7 @@ inline double random_f53(uint64_t u) {
     return n / 9007199254740992.0;
 }
 
-inline std::pair<uint32_t,uint32_t> random_u32_pair(uint64_t u) {
-    return {u >> 32, u};
-}
+inline std::pair<uint32_t, uint32_t> random_u32_pair(uint64_t u) { return {u >> 32, u}; }
 
 }  // namespace detail
 
@@ -272,7 +270,7 @@ inline uint32_t Random::Get<uint32_t>() {
 
 // uniformly distributed pair between [0,2^32)
 template <>
-inline std::pair<uint32_t,uint32_t> Random::Get<std::pair<uint32_t,uint32_t>>() {
+inline std::pair<uint32_t, uint32_t> Random::Get<std::pair<uint32_t, uint32_t>>() {
     return detail::random_u32_pair(Get<uint64_t>());
 }
 
@@ -302,7 +300,7 @@ uint64_t create_uint64_seed(Sseq &ss) {
 inline std::vector<uint64_t> create_seed_seq() {
     std::vector<uint64_t> ret;
 
-// 1. push some well mixed bits on the sequence
+    // 1. push some well mixed bits on the sequence
     ret.push_back(UINT64_C(0xC8F978DB0B32F62E));
 
 // 2. add current time
