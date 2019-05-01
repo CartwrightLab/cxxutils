@@ -1,0 +1,8 @@
+---
+Language:        Cpp
+BasedOnStyle:  Google
+ColumnLimit:     120
+IndentCaseLabels: false
+IndentWidth:     4
+SpaceBeforeParens: Never
+...
