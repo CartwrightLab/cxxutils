@@ -27,6 +27,7 @@ SOFTWARE.
 #include <array>
 #include <cassert>
 #include <cfloat>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -192,11 +193,13 @@ inline bool operator!=(const Xoshiro256StarStarEngine &left, const Xoshiro256Sta
 
 using RandomEngine = Xoshiro256StarStarEngine;
 
+inline  int64_t random_i63(uint64_t u) { return u >> 1; }
 inline uint32_t random_u32(uint64_t u) { return u >> 32; }
+inline  int32_t random_i31(uint64_t u) { return u >> 33; }
 
 // uniformly distributed between [0,max_value)
 // Algorithm 5 from Lemire (2018) https://arxiv.org/pdf/1805.10941.pdf
-template <typename callback>
+template<typename callback>
 uint64_t random_u64_limited(uint64_t max_value, callback &get) {
     uint64_t x = get();
     __uint128_t m = static_cast<__uint128_t>(x) * static_cast<__uint128_t>(max_value);
@@ -212,9 +215,11 @@ uint64_t random_u64_limited(uint64_t max_value, callback &get) {
     return m >> 64;
 }
 
+inline std::pair<uint32_t, uint32_t> random_u32_pair(uint64_t u) { return {u, u >> 32}; }
+
 // sanity check
 static_assert(__FLOAT_WORD_ORDER == __BYTE_ORDER,
-              "random_double52 not implemented if double and uint64_t have different byte orders");
+              "random_double52 is not implemented if double and uint64_t have different byte orders");
 
 inline double random_f52(uint64_t u) {
     u = (u >> 12) | UINT64_C(0x3FF0000000000000);
@@ -229,7 +234,42 @@ inline double random_f53(uint64_t u) {
     return n / 9007199254740992.0;
 }
 
-inline std::pair<uint32_t, uint32_t> random_u32_pair(uint64_t u) { return {u, u >> 32}; }
+inline
+double random_exp_inv(double f) {
+    return -log(f);
+}
+
+extern const int64_t ek[256];
+extern const double ew[256];
+extern const double ef[256];
+
+template<typename callback>
+double random_exp_zig_internal(int64_t a, int b, callback &get) {
+    constexpr double r = 7.69711747013104972;
+    do {
+        if(b == 0) {
+            return r+random_exp_inv(random_f52(get()));
+        }
+        double x = a*ew[b];
+        if(ef[b-1]+random_f52(get())*(ef[b]-ef[b-1]) < exp(-x) ) {
+            return x;
+        }
+        a = random_i63(get());
+        b = (a >> 2) & 255;
+    } while(a > ek[b]);
+    return a*ew[b];
+}
+
+template<typename callback>
+inline
+double random_exp_zig(callback &get) {
+    int64_t a = random_i63(get());
+    int b = (a >> 2) & 255;
+    if( a <= ek[b]) {
+        return a*ew[b];
+    }
+    return random_exp_zig_internal(a,b,get);
+}
 
 }  // namespace detail
 
@@ -252,6 +292,8 @@ class Random : public detail::RandomEngine {
 
     double f52();
     double f53();
+
+    double exp(double rate=1.0);
 
    protected:
 };
@@ -278,6 +320,9 @@ inline double Random::f52() { return detail::random_f52(bits()); }
 
 // uniformly distributed between [0,1.0)
 inline double Random::f53() { return detail::random_f53(bits()); }
+
+// exponential random value with mean 1.0/rate
+inline double Random::exp(double rate) { return detail::random_exp_zig(*this)/rate; }
 
 // Convert a sequence of values into a 64-bit seed
 template <typename Sseq>
