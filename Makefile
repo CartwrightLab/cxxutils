@@ -3,8 +3,8 @@ CXXFLAGS?=-O2 -DNDEBUG
 CLANGTIDY?=clang-tidy
 CLANGFORMAT?=clang-format
 
-TIDYFILES=sparkyrng.hpp
-FORMATFILES=sparkyrng.hpp
+TIDYFILES=sparkyrng.hpp sparkyrng.cc
+FORMATFILES=sparkyrng.hpp sparkyrng.cc
 
 CXXFLAGS+= -std=c++11
 
