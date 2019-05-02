@@ -229,7 +229,7 @@ inline double random_f53(uint64_t u) {
     return n / 9007199254740992.0;
 }
 
-inline std::pair<uint32_t, uint32_t> random_u32_pair(uint64_t u) { return {u >> 32, u}; }
+inline std::pair<uint32_t, uint32_t> random_u32_pair(uint64_t u) { return {u, u >> 32}; }
 
 }  // namespace detail
 
@@ -241,51 +241,43 @@ class Random : public detail::RandomEngine {
    public:
     using detail::RandomEngine::RandomEngine;
 
-    template <typename T, typename R = T>
-    R Get();
+    uint64_t bits();
+    uint64_t bits(int b);
 
-    template <typename T, typename R = T>
-    R Get(R max_value);
+    uint64_t u64();
+    uint64_t u64(uint64_t max_value);
+
+    uint32_t u32();
+    std::pair<uint32_t, uint32_t> u32_pair();
+
+    double f52();
+    double f53();
 
    protected:
 };
 
 // uniformly distributed between [0,2^64)
-template <>
-inline uint64_t Random::Get<uint64_t>() {
-    return detail::RandomEngine::operator()();
-}
+inline uint64_t Random::bits() { return detail::RandomEngine::operator()(); }
+// uniformly distributed between [0,2^b)
+inline uint64_t Random::bits(int b) { return bits() >> (64 - b); }
+
+// uniformly distributed between [0,2^64)
+inline uint64_t Random::u64() { return bits(); }
 
 // uniformly distributed between [0,max_value)
-template <>
-inline uint64_t Random::Get<uint64_t>(uint64_t max_value) {
-    return detail::random_u64_limited(max_value, *this);
-}
+inline uint64_t Random::u64(uint64_t max_value) { return detail::random_u64_limited(max_value, *this); }
 
 // uniformly distributed between [0,2^32)
-template <>
-inline uint32_t Random::Get<uint32_t>() {
-    return detail::random_u32(Get<uint64_t>());
-}
+inline uint32_t Random::u32() { return detail::random_u32(bits()); }
 
 // uniformly distributed pair between [0,2^32)
-template <>
-inline std::pair<uint32_t, uint32_t> Random::Get<std::pair<uint32_t, uint32_t>>() {
-    return detail::random_u32_pair(Get<uint64_t>());
-}
+inline std::pair<uint32_t, uint32_t> Random::u32_pair() { return detail::random_u32_pair(bits()); }
 
 // uniformly distributed between (0,1.0)
-template <>
-inline double Random::Get<double>() {
-    return detail::random_f52(Get<uint64_t>());
-}
+inline double Random::f52() { return detail::random_f52(bits()); }
 
 // uniformly distributed between [0,1.0)
-struct float53_t {};
-template <>
-inline double Random::Get<float53_t>() {
-    return detail::random_f53(Get<uint64_t>());
-}
+inline double Random::f53() { return detail::random_f53(bits()); }
 
 // Convert a sequence of values into a 64-bit seed
 template <typename Sseq>
