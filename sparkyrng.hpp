@@ -109,7 +109,8 @@ class Xoshiro256StarStarEngine {
     void seed(result_type seed_value = default_seed);
 
     template <typename Sseq>
-    void seed(Sseq &ss);
+    typename std::enable_if<!std::is_arithmetic<Sseq>::value>::type
+    seed(Sseq &ss);
 
     const state_type &state() const { return state_; }
     void set_state(const state_type &state) { state_ = state; };
@@ -158,7 +159,9 @@ inline void Xoshiro256StarStarEngine::seed(result_type s) {
 
 // Seed the state with multiple values
 template <typename Sseq>
-inline void Xoshiro256StarStarEngine::seed(Sseq &ss) {
+inline 
+typename std::enable_if<!std::is_arithmetic<Sseq>::value>::type
+Xoshiro256StarStarEngine::seed(Sseq &ss) {
     // start with well mixed bits
     state_ = {UINT64_C(0x5FAF84EE2AA04CFF), UINT64_C(0xB3A2EF3524D89987), UINT64_C(0x5A82B68EF098F79D),
               UINT64_C(0x5D7AA03298486D6E)};
@@ -322,7 +325,7 @@ inline double Random::exp(double mean) { return detail::random_exp_zig(*this) * 
 
 // Convert a sequence of values into a 64-bit seed
 template <typename Sseq>
-uint64_t create_uint64_seed(Sseq &ss) {
+uint64_t create_uint64_seed(const Sseq &ss) {
     uint64_t seed = UINT64_C(0xFD57D105591C980C);
     for(uint64_t s : ss) {
         seed += detail::splitmix64(&s);

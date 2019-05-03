@@ -22,8 +22,8 @@ double random_f52() {
     return myrand.f52();
 }
 
-double random_exp() {
-    return exp(-myrand.exp());
+double random_f53() {
+    return myrand.f53();
 }
 
 int main() {
@@ -41,7 +41,7 @@ int main() {
     bbattery_SmallCrush (gen);
     unif01_DeleteExternGen01 (gen);
 
-    gen = unif01_CreateExternGen01 ("Random-exp", random_exp);
+    gen = unif01_CreateExternGen01 ("Random-f53", random_f53);
     bbattery_SmallCrush (gen);
     unif01_DeleteExternGen01 (gen);
 
