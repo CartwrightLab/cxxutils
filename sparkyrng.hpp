@@ -252,7 +252,7 @@ double random_exp_zig_internal(int64_t a, int b, callback &get) {
             return x;
         }
         a = random_i63(get());
-        b = static_cast<int>((a >> 2) & 255);
+        b = static_cast<int>(a & 255);
     } while(a > ek[b]);
     return a * ew[b];
 }
@@ -260,7 +260,7 @@ double random_exp_zig_internal(int64_t a, int b, callback &get) {
 template <typename callback>
 inline double random_exp_zig(callback &get) {
     int64_t a = random_i63(get());
-    auto b = static_cast<int>((a >> 2) & 255);
+    auto b = static_cast<int>(a & 255);
     if(a <= ek[b]) {
         return a * ew[b];
     }
@@ -289,7 +289,7 @@ class Random : public detail::RandomEngine {
     double f52();
     double f53();
 
-    double exp(double rate = 1.0);
+    double exp(double mean = 1.0);
 
    protected:
 };
@@ -317,8 +317,8 @@ inline double Random::f52() { return detail::random_f52(bits()); }
 // uniformly distributed between [0,1.0)
 inline double Random::f53() { return detail::random_f53(bits()); }
 
-// exponential random value with mean 1.0/rate
-inline double Random::exp(double rate) { return detail::random_exp_zig(*this) / rate; }
+// exponential random value with specified mean. mean=1.0/rate
+inline double Random::exp(double mean) { return detail::random_exp_zig(*this) * mean; }
 
 // Convert a sequence of values into a 64-bit seed
 template <typename Sseq>
