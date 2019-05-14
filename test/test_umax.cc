@@ -1,15 +1,15 @@
-#include "../sparkyrng.hpp"
+#include "../minion.hpp"
 
 extern "C" {
 #include <unif01.h>
 #include <bbattery.h>
 };
 
-sparkyrng::Random myrand;
+minion::Random mrand;
 
 double random_umax() {
     int64_t i = INT64_C(132799643625263);
-    int64_t u = myrand.u64(i);
+    int64_t u = mrand.u64(i);
     
     return (1.0*u)/i;
 }

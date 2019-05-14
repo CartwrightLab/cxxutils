@@ -1,29 +1,29 @@
-#include "../sparkyrng.hpp"
+#include "../minion.hpp"
 
 extern "C" {
 #include <unif01.h>
 #include <bbattery.h>
 };
 
-sparkyrng::Random myrand;
+minion::Random mrand;
 
 unsigned int engine() {
-    auto u = myrand.bits();
+    auto u = mrand.bits();
     return (u>>32);
 }
 
 unsigned int engine_bswap() {
-    auto u = myrand.bits();
+    auto u = mrand.bits();
     u = __builtin_bswap64(u);
     return (u>>32);
 }
 
 double random_f52() {
-    return myrand.f52();
+    return mrand.f52();
 }
 
 double random_f53() {
-    return myrand.f53();
+    return mrand.f53();
 }
 
 int main() {

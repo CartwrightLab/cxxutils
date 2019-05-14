@@ -47,7 +47,7 @@ int main() {
         //printf("%d %ld %#0.17g %#0.17g\n",i, ek[i], ew[i], ef[i]);
     }
 
-    printf("const double sparkyrng::detail::ew[256] = {\n");
+    printf("const double minion::detail::ew[256] = {\n");
     for(int i=0;i<n;++i) {
         if(i%4 == 0) {
             printf("\t");
@@ -61,7 +61,7 @@ int main() {
     }
     printf("};\n\n");
 
-    printf("const double sparkyrng::detail::ef[256] = {\n");
+    printf("const double minion::detail::ef[256] = {\n");
     for(int i=0;i<n;++i) {
         if(i%4 == 0) {
             printf("\t");
@@ -76,7 +76,7 @@ int main() {
     printf("};\n\n");
 
     printf("#define U UINT64_C\n");
-    printf("const int64_t sparkyrng::detail::ek[256] = {\n");
+    printf("const int64_t minion::detail::ek[256] = {\n");
     for(int i=0;i<n;++i) {
         if(i%4 == 0) {
             printf("\t");

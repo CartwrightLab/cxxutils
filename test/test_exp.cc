@@ -1,14 +1,14 @@
-#include "../sparkyrng.hpp"
+#include "../minion.hpp"
 
 extern "C" {
 #include <unif01.h>
 #include <bbattery.h>
 };
 
-sparkyrng::Random myrand;
+minion::Random mrand;
 
 double random_exp() {
-    return exp(-myrand.exp());
+    return exp(-mrand.exp());
 }
 
 int main() {
