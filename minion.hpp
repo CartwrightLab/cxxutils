@@ -21,8 +21,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#ifndef MINION_HPP
-#define MINION_HPP
+#ifndef MINIONRNG_HPP
+#define MINIONRNG_HPP
 
 #include <array>
 #include <cassert>
@@ -48,6 +48,9 @@ SOFTWARE.
 #endif
 
 namespace minion {
+
+class SeedSeq;
+class Random;
 
 namespace detail {
 
@@ -88,18 +91,11 @@ class Xoshiro256StarStarEngine {
     using result_type = uint64_t;
     using state_type = std::array<result_type, 4>;
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
-    Xoshiro256StarStarEngine() { seed_state({0, 0, 0, 0}); }
+    explicit Xoshiro256StarStarEngine(const state_type &seed = {0, 0, 0, 0}) { StateSeed(seed); }
 
-    template <typename Sseq>
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
-    explicit Xoshiro256StarStarEngine(Sseq &ss) {
-        seed_state(ss);
-    }
+    result_type operator()() { return Next(); }
 
-    result_type operator()() { return next(); }
-
-    void discard(uint64_t z);
+    void Discard(uint64_t z);
 
     static constexpr result_type min() { return std::numeric_limits<result_type>::min(); }
     static constexpr result_type max() { return std::numeric_limits<result_type>::max(); }
@@ -107,18 +103,19 @@ class Xoshiro256StarStarEngine {
     friend bool operator==(const Xoshiro256StarStarEngine &left, const Xoshiro256StarStarEngine &right);
 
     const state_type &state() const { return state_; }
-    void set_state(const state_type &state) { state_ = state; };
-    void seed_state(const state_type &seeds);
+    void StateSet(const state_type &state) { state_ = state; };
+
+    void StateSeed(const state_type &seeds);
 
    protected:
-    result_type next();
+    result_type Next();
 
    private:
-    state_type state_;
+    state_type state_{};
 };
 
 // Advance the engine to the next state and return a pseudo-random value
-inline Xoshiro256StarStarEngine::result_type Xoshiro256StarStarEngine::next() {
+inline Xoshiro256StarStarEngine::result_type Xoshiro256StarStarEngine::Next() {
     const uint64_t result_starstar = detail::rotl(state_[1] * 5, 7) * 9;
 
     const uint64_t t = state_[1] << 17;
@@ -136,7 +133,7 @@ inline Xoshiro256StarStarEngine::result_type Xoshiro256StarStarEngine::next() {
 }
 
 // Seed the state of the engine
-inline void Xoshiro256StarStarEngine::seed_state(const state_type &seeds) {
+inline void Xoshiro256StarStarEngine::StateSeed(const state_type &seeds) {
     // start with well mixed bits
     state_ = {UINT64_C(0x5FAF84EE2AA04CFF), UINT64_C(0xB3A2EF3524D89987), UINT64_C(0x5A82B68EF098F79D),
               UINT64_C(0x5D7AA03298486D6E)};
@@ -150,13 +147,13 @@ inline void Xoshiro256StarStarEngine::seed_state(const state_type &seeds) {
         state_[1] = UINT64_C(0x1615CA18E55EE70C);
     }
     // burn in 256 values
-    discard(256);
+    Discard(256);
 }
 
 // Read z values from the Engine and discard
-inline void Xoshiro256StarStarEngine::discard(uint64_t z) {
+inline void Xoshiro256StarStarEngine::Discard(uint64_t z) {
     for(; z != UINT64_C(0); --z) {
-        next();
+        Next();
     }
 }
 
@@ -268,8 +265,8 @@ class Random : public detail::RandomEngine {
 
     double exp(double mean = 1.0);
 
-    template <typename Sseq>
-    void seed(const Sseq &ss);
+    void Seed(const SeedSeq &ss);
+    void Seed(const uint64_t s);
 };
 
 // uniformly distributed between [0,2^64)
@@ -314,47 +311,52 @@ inline uint64_t hash_combine(uint64_t h, uint64_t k) {
 
 }  // namespace detail
 
-// Seed a state base on a sequence of values
-template <typename State, typename Sseq>
-typename std::enable_if<!std::is_arithmetic<Sseq>::value>::type seed_range(const Sseq &ss, State *state) {
-    // for each number in Sseq, generate a distribution
-    // of random values using splitmix64
-    // for each number in state, hash_combine the corresponding
-    // random values.
-    for(uint64_t s : ss) {
-        for(auto &&a : *state) {
-            a = detail::hash_combine(a, detail::splitmix64(&s));
+class SeedSeq {
+   public:
+    // Stores a vector of seeds in the object
+    template <typename... Args>
+    explicit SeedSeq(Args &&... args) : seq_(std::forward<Args>(args)...) {}
+
+    // Fills a range of states based on the stored seeds
+    template <typename It1, typename It2>
+    void Generate(It1 first, It2 last) const {
+        for(uint64_t s : seq_) {
+            for(It1 it = first; it != last; ++it) {
+                *it = detail::hash_combine(*it, detail::splitmix64(&s));
+            }
         }
     }
-}
 
-template <typename State>
-void seed_range(uint64_t s, State *state) {
-    // for each number in Sseq, generate a distribution
-    // of random values using splitmix64
-    // for each number in state, hash_combine the corresponding
-    // random values.
-    for(auto &&a : *state) {
-        a = detail::hash_combine(a, detail::splitmix64(&s));
+    // Fills a range of states based on the stored seeds
+    template <typename Range>
+    void Generate(Range &range) const {
+        Generate(std::begin(range), std::end(range));
     }
+
+    // Generates a uint64_t seed based on the stored seeds
+    uint64_t GenerateU64(uint64_t s = UINT64_C(0xFD57D105591C980C)) const {
+        std::array<uint64_t, 1> u{s};
+        Generate(u);
+        return u[0];
+    }
+
+   private:
+    std::vector<uint64_t> seq_;
+};
+
+inline void Random::Seed(uint64_t s) {
+    SeedSeq ss(1, s);
+    Seed(ss);
 }
 
-template <typename Sseq>
-uint64_t create_uint64_seed(const Sseq &ss) {
-    std::array<uint64_t, 1> u{UINT64_C(0xFD57D105591C980C)};
-    seed_range(ss, &u);
-    return u[0];
-}
-
-template <typename Sseq>
-void Random::seed(const Sseq &ss) {
+inline void Random::Seed(const SeedSeq &ss) {
     state_type seeds = {UINT64_C(0x9272B87FD9F64D09), UINT64_C(0x6640D56C8CDA60AC), UINT64_C(0xDEED25ED8495FC63),
                         UINT64_C(0xAEA86A029F129AB9)};
-    seed_range(ss, &seeds);
-    seed_state(seeds);
+    ss.Generate(seeds.begin(), seeds.end());
+    StateSeed(seeds);
 }
 
-inline std::vector<uint64_t> create_seed_seq() {
+inline SeedSeq create_seed_seq() {
     std::vector<uint64_t> ret;
 
     // 1. push some well mixed bits on the sequence
@@ -381,29 +383,29 @@ inline std::vector<uint64_t> create_seed_seq() {
     ret.push_back(u);
 #endif
 
-    return ret;
+    return SeedSeq{std::move(ret)};
 }
 
-class alias_table {
+class AliasTable {
    public:
-    alias_table() = default;
+    AliasTable() = default;
 
     template <typename... Args>
-    explicit alias_table(Args... args) {
+    explicit AliasTable(Args &&... args) {
         create(std::forward<Args>(args)...);
     }
 
     // create the alias table
-    void create_inplace(std::vector<double> *v);
+    void CreateInplace(std::vector<double> *v);
 
     // create the alias table
     template <typename... Args>
-    void create(Args... args) {
+    void Create(Args &&... args) {
         std::vector<double> vv(std::forward<Args>(args)...);
-        create_inplace(&vv);
+        CreateInplace(&vv);
     }
 
-    int get(uint64_t u) const {
+    int Get(uint64_t u) const {
         auto yx = detail::random_u32_pair(u >> shr_);
         return (yx.first < p_[yx.second]) ? yx.second : a_[yx.second];
     }
@@ -411,11 +413,11 @@ class alias_table {
     const std::vector<uint32_t> &a() const { return a_; }
     const std::vector<uint32_t> &p() const { return p_; }
 
-    int operator()(uint64_t u) const { return get(u); }
+    int operator()(uint64_t u) const { return Get(u); }
 
    private:
     template <typename T>
-    inline static std::pair<T, int> round_up(T x) {
+    inline static std::pair<T, int> RoundUp(T x) {
         T y = static_cast<T>(2);
         int k = 1;
         for(; y < x; y *= 2, ++k) {
@@ -429,11 +431,11 @@ class alias_table {
     std::vector<uint32_t> p_;
 };
 
-inline void alias_table::create_inplace(std::vector<double> *v) {
+inline void AliasTable::CreateInplace(std::vector<double> *v) {
     assert(v != nullptr);
     assert(v->size() <= std::numeric_limits<uint32_t>::max());
     // round the size of vector up to the nearest power of two
-    auto ru = round_up(v->size());
+    auto ru = RoundUp(v->size());
     size_t sz = ru.first;
     v->resize(sz, 0.0);
     a_.resize(sz, 0);
@@ -457,7 +459,7 @@ inline void alias_table::create_inplace(std::vector<double> *v) {
     }
     mm = m + 1;
 
-    // contruct table
+    // construct table
     while(g < sz && m < sz) {
         assert((*v)[m] < d);
         p_[m] = static_cast<uint32_t>(4294967296.0 / d * (*v)[m]);
@@ -499,5 +501,5 @@ inline void alias_table::create_inplace(std::vector<double> *v) {
 
 }  // namespace minion
 
-// MINION_HPP
+// MINIONRNG_HPP
 #endif

@@ -7,11 +7,11 @@ minion::Random mrand;
 
 int main() {
     // create a 64-bit pre seed
-    uint64_t seed64 = minion::create_uint64_seed(minion::create_seed_seq());
+    uint64_t seed64 = minion::create_seed_seq().GenerateU64();
     // reduce seed to 31 bits (not needed, but easier for users to work with)
     int seed = seed64 >> 33;
     // seed mrand
-    mrand.seed(seed);
+    mrand.Seed(seed);
     printf("Seed is %d\n",seed);
 
     // generate random values
