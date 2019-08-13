@@ -21,3 +21,6 @@ format:
 	$(CLANGFORMAT) -i $(FORMATFILES)
 
 .PHONY: tidy format
+
+example: example.cc minion.hpp
+	$(CXX) $(CXXFLAGS) -o $@ $<

@@ -87,15 +87,14 @@ class Xoshiro256StarStarEngine {
    public:
     using result_type = uint64_t;
     using state_type = std::array<result_type, 4>;
-    static constexpr result_type default_seed = 18914u;
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
-    explicit Xoshiro256StarStarEngine(result_type seed_value = default_seed) { seed(seed_value); }
+    Xoshiro256StarStarEngine() { seed_state({0, 0, 0, 0}); }
 
     template <typename Sseq>
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
     explicit Xoshiro256StarStarEngine(Sseq &ss) {
-        seed(ss);
+        seed_state(ss);
     }
 
     result_type operator()() { return next(); }
@@ -107,13 +106,9 @@ class Xoshiro256StarStarEngine {
 
     friend bool operator==(const Xoshiro256StarStarEngine &left, const Xoshiro256StarStarEngine &right);
 
-    void seed(result_type seed_value = default_seed);
-
-    template <typename Sseq>
-    typename std::enable_if<!std::is_arithmetic<Sseq>::value>::type seed(Sseq &ss);
-
     const state_type &state() const { return state_; }
     void set_state(const state_type &state) { state_ = state; };
+    void seed_state(const state_type &seeds);
 
    protected:
     result_type next();
@@ -140,35 +135,16 @@ inline Xoshiro256StarStarEngine::result_type Xoshiro256StarStarEngine::next() {
     return result_starstar;
 }
 
-// Seed the state with a single value
-inline void Xoshiro256StarStarEngine::seed(result_type s) {
+// Seed the state of the engine
+inline void Xoshiro256StarStarEngine::seed_state(const state_type &seeds) {
     // start with well mixed bits
     state_ = {UINT64_C(0x5FAF84EE2AA04CFF), UINT64_C(0xB3A2EF3524D89987), UINT64_C(0x5A82B68EF098F79D),
               UINT64_C(0x5D7AA03298486D6E)};
-    // add in random bits generated from seed
-    for(auto &&a : state_) {
-        a += detail::splitmix64(&s);
-    }
-    // check to see if state is all zeros and fix
-    if(state_[0] == 0 && state_[1] == 0 && state_[2] == 0 && state_[3] == 0) {
-        state_[1] = UINT64_C(0x1615CA18E55EE70C);
-    }
-    // burn in 256 values
-    discard(256);
-};
-
-// Seed the state with multiple values
-template <typename Sseq>
-inline typename std::enable_if<!std::is_arithmetic<Sseq>::value>::type Xoshiro256StarStarEngine::seed(Sseq &ss) {
-    // start with well mixed bits
-    state_ = {UINT64_C(0x5FAF84EE2AA04CFF), UINT64_C(0xB3A2EF3524D89987), UINT64_C(0x5A82B68EF098F79D),
-              UINT64_C(0x5D7AA03298486D6E)};
-    // add in random bits generated from seeds
-    for(result_type s : ss) {
-        for(auto &&a : state_) {
-            a += detail::splitmix64(&s);
-        }
-    }
+    // add in the seeds
+    state_[0] += seeds[0];
+    state_[1] += seeds[1];
+    state_[2] += seeds[2];
+    state_[3] += seeds[3];
     // check to see if state is all zeros and fix
     if(state_[0] == 0 && state_[1] == 0 && state_[2] == 0 && state_[3] == 0) {
         state_[1] = UINT64_C(0x1615CA18E55EE70C);
@@ -292,7 +268,8 @@ class Random : public detail::RandomEngine {
 
     double exp(double mean = 1.0);
 
-   protected:
+    template <typename Sseq>
+    void seed(const Sseq &ss);
 };
 
 // uniformly distributed between [0,2^64)
@@ -321,14 +298,60 @@ inline double Random::f53() { return detail::random_f53(bits()); }
 // exponential random value with specified mean. mean=1.0/rate
 inline double Random::exp(double mean) { return detail::random_exp_zig(*this) * mean; }
 
-// Convert a sequence of values into a 64-bit seed
+namespace detail {
+
+// mummer2's 64-bit hash combining algorithm (from boost)
+inline uint64_t hash_combine(uint64_t h, uint64_t k) {
+    const uint64_t m = UINT64_C(0xC6A4A7935BD1E995);
+    const int r = 47;
+    k *= m;
+    k ^= k >> r;
+    k *= m;
+    h ^= k;
+    h *= m;
+    return h + UINT64_C(0x7915EC772F6EF2E8);
+}
+
+}  // namespace detail
+
+// Seed a state base on a sequence of values
+template <typename State, typename Sseq>
+typename std::enable_if<!std::is_arithmetic<Sseq>::value>::type seed_range(const Sseq &ss, State *state) {
+    // for each number in Sseq, generate a distribution
+    // of random values using splitmix64
+    // for each number in state, hash_combine the corresponding
+    // random values.
+    for(uint64_t s : ss) {
+        for(auto &&a : *state) {
+            a = detail::hash_combine(a, detail::splitmix64(&s));
+        }
+    }
+}
+
+template <typename State>
+void seed_range(uint64_t s, State *state) {
+    // for each number in Sseq, generate a distribution
+    // of random values using splitmix64
+    // for each number in state, hash_combine the corresponding
+    // random values.
+    for(auto &&a : *state) {
+        a = detail::hash_combine(a, detail::splitmix64(&s));
+    }
+}
+
 template <typename Sseq>
 uint64_t create_uint64_seed(const Sseq &ss) {
-    uint64_t seed = UINT64_C(0xFD57D105591C980C);
-    for(uint64_t s : ss) {
-        seed += detail::splitmix64(&s);
-    }
-    return seed;
+    std::array<uint64_t, 1> u{UINT64_C(0xFD57D105591C980C)};
+    seed_range(ss, &u);
+    return u[0];
+}
+
+template <typename Sseq>
+void Random::seed(const Sseq &ss) {
+    state_type seeds = {UINT64_C(0x9272B87FD9F64D09), UINT64_C(0x6640D56C8CDA60AC), UINT64_C(0xDEED25ED8495FC63),
+                        UINT64_C(0xAEA86A029F129AB9)};
+    seed_range(ss, &seeds);
+    seed_state(seeds);
 }
 
 inline std::vector<uint64_t> create_seed_seq() {
@@ -395,8 +418,9 @@ class alias_table {
     inline static std::pair<T, int> round_up(T x) {
         T y = static_cast<T>(2);
         int k = 1;
-        for(; y < x; y *= 2, ++k) /*noop*/
-            ;
+        for(; y < x; y *= 2, ++k) {
+            /*noop*/;
+        }
         return std::make_pair(y, k);
     }
 
@@ -425,10 +449,12 @@ inline void alias_table::create_inplace(std::vector<double> *v) {
     //     m: current small value index
     //    mm: next possible small value index
     size_t g, m, mm;
-    for(g = 0; g < sz && (*v)[g] < d; ++g) /*noop*/
-        ;
-    for(m = 0; m < sz && (*v)[m] >= d; ++m) /*noop*/
-        ;
+    for(g = 0; g < sz && (*v)[g] < d; ++g) {
+        /*noop*/;
+    }
+    for(m = 0; m < sz && (*v)[m] >= d; ++m) {
+        /*noop*/;
+    }
     mm = m + 1;
 
     // contruct table
@@ -438,14 +464,16 @@ inline void alias_table::create_inplace(std::vector<double> *v) {
         a_[m] = static_cast<uint32_t>(g);
         (*v)[g] = ((*v)[g] + (*v)[m]) - d;
         if((*v)[g] >= d || mm <= g) {
-            for(m = mm; m < sz && (*v)[m] >= d; ++m) /*noop*/
-                ;
+            for(m = mm; m < sz && (*v)[m] >= d; ++m) {
+                /*noop*/;
+            }
             mm = m + 1;
         } else {
             m = g;
         }
-        for(; g < sz && (*v)[g] < d; ++g) /*noop*/
-            ;
+        for(; g < sz && (*v)[g] < d; ++g) {
+            /*noop*/;
+        }
     }
     // if we stopped early fill in the rest
     if(g < sz) {
