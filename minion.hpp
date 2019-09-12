@@ -32,6 +32,7 @@ SOFTWARE.
 #include <cstring>
 #include <limits>
 #include <numeric>
+#include <type_traits>
 #include <vector>
 
 #if defined(_WIN64) || defined(_WIN32)
@@ -49,28 +50,10 @@ SOFTWARE.
 
 namespace minion {
 
-class SeedSeq;
+class SeedSeq32;
 class Random;
 
 namespace detail {
-
-inline uint64_t rotl(const uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }
-
-/*
-This is a fixed-increment version of Java 8's SplittableRandom generator
-See http://dx.doi.org/10.1145/2714064.2660195 and
-http://docs.oracle.com/javase/8/docs/api/java/util/SplittableRandom.html
-
-Based on code written in 2015 by Sebastiano Vigna (vigna@acm.org)
-*/
-
-inline uint64_t splitmix64(uint64_t *state) {
-    assert(state != nullptr);
-    uint64_t z = (*state += UINT64_C(0x9e3779b97f4a7c15));
-    z = (z ^ (z >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
-    z = (z ^ (z >> 27)) * UINT64_C(0x94d049bb133111eb);
-    return z ^ (z >> 31);
-}
 
 /*
 C++11 compatible PRNG engine implementing xoshiro256**
@@ -113,6 +96,8 @@ class Xoshiro256StarStarEngine {
    private:
     state_type state_{};
 };
+
+inline uint64_t rotl(const uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }
 
 // Advance the engine to the next state and return a pseudo-random value
 inline Xoshiro256StarStarEngine::result_type Xoshiro256StarStarEngine::Next() {
@@ -265,8 +250,8 @@ class Random : public detail::RandomEngine {
 
     double exp(double mean = 1.0);
 
-    void Seed(const SeedSeq &ss);
-    void Seed(const uint64_t s);
+    void Seed(const SeedSeq32 &ss);
+    void Seed(const uint32_t s);
 };
 
 // uniformly distributed between [0,2^64)
@@ -297,33 +282,55 @@ inline double Random::exp(double mean) { return detail::random_exp_zig(*this) * 
 
 namespace detail {
 
-// mummer2's 64-bit hash combining algorithm (from boost)
-inline uint64_t hash_combine(uint64_t h, uint64_t k) {
-    const uint64_t m = UINT64_C(0xC6A4A7935BD1E995);
-    const int r = 47;
-    k *= m;
-    k ^= k >> r;
-    k *= m;
-    h ^= k;
-    h *= m;
-    return h + UINT64_C(0x7915EC772F6EF2E8);
+/*
+This is a fixed-increment version of Java 8's SplittableRandom generator
+See http://dx.doi.org/10.1145/2714064.2660195 and
+http://docs.oracle.com/javase/8/docs/api/java/util/SplittableRandom.html
+
+Based on code written in 2015 by Sebastiano Vigna (vigna@acm.org)
+*/
+
+inline uint64_t splitmix64(uint64_t *state) {
+    assert(state != nullptr);
+    *state += UINT64_C(0x9e3779b97f4a7c15);
+    uint64_t z = *state;
+    z = (z ^ (z >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    z = (z ^ (z >> 27)) * UINT64_C(0x94d049bb133111eb);
+    return z ^ (z >> 31);
 }
 
 }  // namespace detail
 
-class SeedSeq {
+// Create a sequence of 32-bit states based on hashing 32-bit seeds
+class SeedSeq32 {
    public:
     // Stores a vector of seeds in the object
     template <typename... Args>
-    explicit SeedSeq(Args &&... args) : seq_(std::forward<Args>(args)...) {}
+    explicit SeedSeq32(Args &&... args) : seq_(std::forward<Args>(args)...) {}
 
-    // Fills a range of states based on the stored seeds
+    // Generates a range of 32-bit states based on the stored seeds
+    // Uses a unique multilinear hash per state (https://arxiv.org/pdf/1202.4961.pdf)
+    // Hash is based on a sequence of random 64-bit numbers genrate by splitmix64.
+    // splitmix64 is seeded by the initial values in the range
+    //
+    // Multilinear hash is (m_0 + sum(m_i*u_i) mod 2^64) / 2^32
+    // m = buffer of 64-bit unsigned random values
+    // u = 32-bit input values that are being hashed
+
     template <typename It1, typename It2>
     void Generate(It1 first, It2 last) const {
-        for(uint64_t s : seq_) {
-            for(It1 it = first; it != last; ++it) {
-                *it = detail::hash_combine(*it, detail::splitmix64(&s));
+        for(It1 it = first; it != last; ++it) {
+            uint64_t s = static_cast<uint64_t>(*it);
+            uint64_t sum = detail::splitmix64(&s);
+            for(uint32_t u : seq_) {
+                sum += detail::splitmix64(&s) * u;
             }
+            // If seq_ ends in a zero, the hash is not unique.
+            // Add a final value to ensure that that doesn't happen.
+            sum += detail::splitmix64(&s) * 1;
+            
+            // final value
+            *it = (sum >> 32);
         }
     }
 
@@ -333,57 +340,70 @@ class SeedSeq {
         Generate(std::begin(range), std::end(range));
     }
 
-    // Generates a uint64_t seed based on the stored seeds
-    uint64_t GenerateU64(uint64_t s = UINT64_C(0xFD57D105591C980C)) const {
-        std::array<uint64_t, 1> u{s};
+    // Generates a uint32_t seed based on the stored seeds
+    uint32_t GenerateOne(uint32_t s = 0xFD57D105u) const {
+        std::array<uint32_t, 1> u{s};
         Generate(u);
         return u[0];
     }
 
    private:
-    std::vector<uint64_t> seq_;
+    std::vector<uint32_t> seq_;
 };
 
-inline void Random::Seed(uint64_t s) {
-    SeedSeq ss(1, s);
+inline void Random::Seed(uint32_t s) {
+    SeedSeq32 ss(1, s);
     Seed(ss);
 }
 
-inline void Random::Seed(const SeedSeq &ss) {
-    state_type seeds = {UINT64_C(0x9272B87FD9F64D09), UINT64_C(0x6640D56C8CDA60AC), UINT64_C(0xDEED25ED8495FC63),
-                        UINT64_C(0xAEA86A029F129AB9)};
-    ss.Generate(seeds.begin(), seeds.end());
+inline void Random::Seed(const SeedSeq32 &ss) {
+    // checking for code assumptions
+    static_assert(sizeof(state_type::value_type) == 8, "state_type::value_type does not hold 64 bits");
+    static_assert(state_type{}.size() == 4, "state_type does not contain 4 values");
+
+    // starting values / hash seeds
+    std::array<uint32_t, 8> values = {
+        0x9272B87Fu, 0xD9F64D09u, 0x6640D56Cu, 0x8CDA60ACu,
+        0xDEED25EDu, 0x8495FC63u, 0xAEA86A02u, 0x9F129AB9u
+    };
+    ss.Generate(values.begin(), values.end());
+
+    // copy 8 32-bit seeds to 4 64-bit seeds
+    state_type seeds;
+    std::memcpy(seeds.data(), values.data(), seeds.size()*sizeof(seeds[0]));
+
     StateSeed(seeds);
 }
 
-inline SeedSeq create_seed_seq() {
-    std::vector<uint64_t> ret;
+inline SeedSeq32 create_seed_seq() {
+    std::vector<uint32_t> ret;
 
-    // 1. push some well mixed bits on the sequence
-    ret.push_back(UINT64_C(0xC8F978DB0B32F62E));
+    // 1. current time
+    // 2. current pid
+    // 3. 64 random bits (if properly implemented)
+    // 4. 64 well-mixed bits on the end (just in case)
 
-// 2. add current time
 #if __cpluscplus >= 201103L
     ret.push_back(std::chrono::high_resolution_clock::now().time_since_epoch().count());
 #else
     ret.push_back(time(nullptr));
 #endif
 
-// 3. use current pid
 #if defined(_WIN64) || defined(_WIN32)
     ret.push_back(_getpid());
 #else
     ret.push_back(getpid());
 #endif
 
-// 4. add 64 random bits (if properly implemented)
 #if __cpluscplus >= 201103L
-    uint64_t u = std::random_device{}();
-    u = (u << 32) + std::random_device{}();
-    ret.push_back(u);
+    ret.push_back(std::random_device{}());
+    ret.push_back(std::random_device{}());
 #endif
+    
+    ret.push_back(0xC8F978DBu);
+    ret.push_back(0x0B32F62Eu);
 
-    return SeedSeq{std::move(ret)};
+    return SeedSeq32{std::move(ret)};
 }
 
 class AliasTable {
