@@ -326,24 +326,25 @@ class SeedSeq32 {
                 sum += detail::splitmix64(&s) * u;
             }
             // If seq_ ends in a zero, the hash is not unique.
-            // Add a final value to ensure that that doesn't happen.
+            // Add a final value to ensure that this doesn't happen.
             sum += detail::splitmix64(&s) * 1;
             
             // final value
-            *it = (sum >> 32);
+            *it = static_cast<uint32_t>(sum >> 32);
         }
     }
 
     // Fills a range of states based on the stored seeds
     template <typename Range>
-    void Generate(Range &range) const {
-        Generate(std::begin(range), std::end(range));
+    void Generate(Range *range) const {
+        assert(range != nullptr);
+        Generate(std::begin(*range), std::end(*range));
     }
 
     // Generates a uint32_t seed based on the stored seeds
     uint32_t GenerateOne(uint32_t s = 0xFD57D105u) const {
         std::array<uint32_t, 1> u{s};
-        Generate(u);
+        Generate(&u);
         return u[0];
     }
 
@@ -384,7 +385,9 @@ inline SeedSeq32 create_seed_seq() {
     // 4. 64 well-mixed bits on the end (just in case)
 
 #if __cpluscplus >= 201103L
-    ret.push_back(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    uint64_t u = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    ret.push_back(static_cast<uint32_t>(u));
+    ret.push_back(static_cast<uint32_t>(u >> 32));
 #else
     ret.push_back(time(nullptr));
 #endif
