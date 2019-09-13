@@ -74,7 +74,7 @@ class Xoshiro256StarStarEngine {
     using result_type = uint64_t;
     using state_type = std::array<result_type, 4>;
 
-    explicit Xoshiro256StarStarEngine(const state_type &seed = {0, 0, 0, 0}) { StateSeed(seed); }
+    explicit Xoshiro256StarStarEngine(const state_type &seed = {0, 0, 0, 0}) { InitState(seed); }
 
     result_type operator()() { return Next(); }
 
@@ -86,9 +86,9 @@ class Xoshiro256StarStarEngine {
     friend bool operator==(const Xoshiro256StarStarEngine &left, const Xoshiro256StarStarEngine &right);
 
     const state_type &state() const { return state_; }
-    void StateSet(const state_type &state) { state_ = state; };
+    void SetState(const state_type &state) { state_ = state; };
 
-    void StateSeed(const state_type &seeds);
+    void InitState(const state_type &seeds);
 
    protected:
     result_type Next();
@@ -118,7 +118,7 @@ inline Xoshiro256StarStarEngine::result_type Xoshiro256StarStarEngine::Next() {
 }
 
 // Seed the state of the engine
-inline void Xoshiro256StarStarEngine::StateSeed(const state_type &seeds) {
+inline void Xoshiro256StarStarEngine::InitState(const state_type &seeds) {
     // start with well mixed bits
     state_ = {UINT64_C(0x5FAF84EE2AA04CFF), UINT64_C(0xB3A2EF3524D89987), UINT64_C(0x5A82B68EF098F79D),
               UINT64_C(0x5D7AA03298486D6E)};
@@ -359,8 +359,10 @@ inline void Random::Seed(uint32_t s) {
 
 inline void Random::Seed(const SeedSeq32 &ss) {
     // checking for code assumptions
-    static_assert(sizeof(state_type::value_type) == 8, "state_type::value_type does not hold 64 bits");
-    static_assert(state_type{}.size() == 4, "state_type does not contain 4 values");
+    static_assert(sizeof(state_type::value_type) == 8,
+        "state_type::value_type does not hold 64 bits");
+    static_assert(state_type{}.size() == 4,
+        "state_type does not contain 4 values");
 
     // starting values / hash seeds
     std::array<uint32_t, 8> values = {
@@ -373,7 +375,7 @@ inline void Random::Seed(const SeedSeq32 &ss) {
     state_type seeds;
     std::memcpy(seeds.data(), values.data(), seeds.size()*sizeof(seeds[0]));
 
-    StateSeed(seeds);
+    InitState(seeds);
 }
 
 inline SeedSeq32 create_seed_seq() {
