@@ -388,11 +388,11 @@ inline SeedSeq32 create_seed_seq() {
 
 #if __cpluscplus >= 201103L
     uint64_t u = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+#else
+    uint64_t u = time(nullptr);;
+#endif
     ret.push_back(static_cast<uint32_t>(u));
     ret.push_back(static_cast<uint32_t>(u >> 32));
-#else
-    ret.push_back(time(nullptr));
-#endif
 
 #if defined(_WIN64) || defined(_WIN32)
     ret.push_back(_getpid());
