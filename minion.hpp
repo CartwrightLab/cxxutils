@@ -320,7 +320,7 @@ class SeedSeq32 {
     template <typename It1, typename It2>
     void Generate(It1 first, It2 last) const {
         for(It1 it = first; it != last; ++it) {
-            uint64_t s = static_cast<uint64_t>(*it);
+            auto s = static_cast<uint64_t>(*it);
             uint64_t sum = detail::splitmix64(&s);
             for(uint32_t u : seq_) {
                 sum += detail::splitmix64(&s) * u;
@@ -328,7 +328,7 @@ class SeedSeq32 {
             // If seq_ ends in a zero, the hash is not unique.
             // Add a final value to ensure that this doesn't happen.
             sum += detail::splitmix64(&s) * 1;
-            
+
             // final value
             *it = static_cast<uint32_t>(sum >> 32);
         }
@@ -359,21 +359,17 @@ inline void Random::Seed(uint32_t s) {
 
 inline void Random::Seed(const SeedSeq32 &ss) {
     // checking for code assumptions
-    static_assert(sizeof(state_type::value_type) == 8,
-        "state_type::value_type does not hold 64 bits");
-    static_assert(state_type{}.size() == 4,
-        "state_type does not contain 4 values");
+    static_assert(sizeof(state_type::value_type) == 8, "state_type::value_type does not hold 64 bits");
+    static_assert(state_type{}.size() == 4, "state_type does not contain 4 values");
 
     // starting values / hash seeds
-    std::array<uint32_t, 8> values = {
-        0x9272B87Fu, 0xD9F64D09u, 0x6640D56Cu, 0x8CDA60ACu,
-        0xDEED25EDu, 0x8495FC63u, 0xAEA86A02u, 0x9F129AB9u
-    };
+    std::array<uint32_t, 8> values = {0x9272B87Fu, 0xD9F64D09u, 0x6640D56Cu, 0x8CDA60ACu,
+                                      0xDEED25EDu, 0x8495FC63u, 0xAEA86A02u, 0x9F129AB9u};
     ss.Generate(values.begin(), values.end());
 
     // copy 8 32-bit seeds to 4 64-bit seeds
     state_type seeds;
-    std::memcpy(seeds.data(), values.data(), seeds.size()*sizeof(seeds[0]));
+    std::memcpy(seeds.data(), values.data(), seeds.size() * sizeof(seeds[0]));
 
     InitState(seeds);
 }
@@ -389,7 +385,7 @@ inline SeedSeq32 create_seed_seq() {
 #if __cpluscplus >= 201103L
     uint64_t u = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 #else
-    uint64_t u = time(nullptr);;
+    uint64_t u = time(nullptr);
 #endif
     ret.push_back(static_cast<uint32_t>(u));
     ret.push_back(static_cast<uint32_t>(u >> 32));
@@ -404,7 +400,7 @@ inline SeedSeq32 create_seed_seq() {
     ret.push_back(std::random_device{}());
     ret.push_back(std::random_device{}());
 #endif
-    
+
     ret.push_back(0xC8F978DBu);
     ret.push_back(0x0B32F62Eu);
 
