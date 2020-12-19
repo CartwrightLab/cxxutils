@@ -50,107 +50,83 @@ SOFTWARE.
 
 namespace minion {
 
-class SeedSeq32;
+template<size_t count>
+class SeedSeq;
 class Random;
 
 namespace detail {
 
 /*
-C++11 compatible PRNG engine implementing xoshiro256**
-
-This is xoshiro256** 1.0, our all-purpose, rock-solid generator. It has
-excellent (sub-ns) speed, a state (256 bits) that is large enough for
-any parallel application, and it passes all tests we are aware of.
-
-The state must be seeded so that it is not everywhere zero. If you have
-a 64-bit seed, we suggest to seed a splitmix64 generator and use its
-output to fill s.
-
-Based on code written in 2018 by David Blackman and Sebastiano Vigna (vigna@acm.org)
+A Fast 128-bit, Lehmer-style PRNG
+Copyright (c) 2018 Melissa E. O'Neill
+The MIT License (MIT)
+https://gist.github.com/imneme/aeae7628565f15fb3fef54be8533e39c
+https://www.pcg-random.org/posts/does-it-beat-the-minimal-standard.html
 */
 
-class Xoshiro256StarStarEngine {
-   public:
+class Lehmer64Fast {
+public:
     using result_type = uint64_t;
-    using state_type = std::array<result_type, 4>;
+    using state_type = __uint128_t;
+    using seed_type = std::array<uint32_t,sizeof(state_type)/sizeof(uint32_t)>;
 
-    explicit Xoshiro256StarStarEngine(const state_type &seed = {0, 0, 0, 0}) { InitState(seed); }
+private:
+    state_type state_;
+    static constexpr auto MCG_MULT = 0xda942042e4dd58b5ULL;
+    static constexpr unsigned int STYPE_BITS = 8*sizeof(state_type);
+    static constexpr unsigned int RTYPE_BITS = 8*sizeof(result_type);
+    
+public:
+    static constexpr result_type min() { return static_cast<result_type>(0);  }
+    static constexpr result_type max() { return static_cast<result_type>(~static_cast<result_type>(0)); }
 
-    result_type operator()() { return Next(); }
+    Lehmer64Fast(state_type state = state_type(0x9f57c403d06c42fcULL)) {
+        SetState(state);
+    }
+    Lehmer64Fast(seed_type seed) {
+        Seed(seed);
+    }
 
-    void Discard(uint64_t z);
+    void SetState(state_type state) {
+        // state cannot be odd.
+        state_ = state | 1;
+    }
 
-    static constexpr result_type min() { return std::numeric_limits<result_type>::min(); }
-    static constexpr result_type max() { return std::numeric_limits<result_type>::max(); }
+    void Seed(seed_type seed) {
+        state_type state;
+        std::memcpy(&state, &seed, sizeof(seed));
+        SetState(state);
+    }
 
-    friend bool operator==(const Xoshiro256StarStarEngine &left, const Xoshiro256StarStarEngine &right);
+    void Advance() {
+        state_ *= MCG_MULT;
+    }
 
-    const state_type &state() const { return state_; }
-    void SetState(const state_type &state) { state_ = state; };
+    void Discard(size_t count) {
+        for(size_t k=0;k<count;++k) {
+            Advance();
+        }
+    }
 
-    void InitState(const state_type &seeds);
+    state_type GetState() const {
+        return state_;
+    }
 
-   protected:
-    result_type Next();
+    result_type operator()() {
+        Advance();
+        return static_cast<result_type>(state_ >> (STYPE_BITS - RTYPE_BITS));
+    }
 
-   private:
-    state_type state_{};
+    bool operator==(const Lehmer64Fast& rhs) {
+        return (state_ == rhs.state_);
+    }
+
+    bool operator!=(const Lehmer64Fast& rhs) {
+        return !operator==(rhs);
+    }
 };
 
-inline uint64_t rotl(const uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }
-
-// Advance the engine to the next state and return a pseudo-random value
-inline Xoshiro256StarStarEngine::result_type Xoshiro256StarStarEngine::Next() {
-    const uint64_t result_starstar = detail::rotl(state_[1] * 5, 7) * 9;
-
-    const uint64_t t = state_[1] << 17;
-
-    state_[2] ^= state_[0];
-    state_[3] ^= state_[1];
-    state_[1] ^= state_[2];
-    state_[0] ^= state_[3];
-
-    state_[2] ^= t;
-
-    state_[3] = detail::rotl(state_[3], 45);
-
-    return result_starstar;
-}
-
-// Seed the state of the engine
-inline void Xoshiro256StarStarEngine::InitState(const state_type &seeds) {
-    // start with well mixed bits
-    state_ = {UINT64_C(0x5FAF84EE2AA04CFF), UINT64_C(0xB3A2EF3524D89987), UINT64_C(0x5A82B68EF098F79D),
-              UINT64_C(0x5D7AA03298486D6E)};
-    // add in the seeds
-    state_[0] += seeds[0];
-    state_[1] += seeds[1];
-    state_[2] += seeds[2];
-    state_[3] += seeds[3];
-    // check to see if state is all zeros and fix
-    if(state_[0] == 0 && state_[1] == 0 && state_[2] == 0 && state_[3] == 0) {
-        state_[1] = UINT64_C(0x1615CA18E55EE70C);
-    }
-    // burn in 256 values
-    Discard(256);
-}
-
-// Read z values from the Engine and discard
-inline void Xoshiro256StarStarEngine::Discard(uint64_t z) {
-    for(; z != UINT64_C(0); --z) {
-        Next();
-    }
-}
-
-inline bool operator==(const Xoshiro256StarStarEngine &left, const Xoshiro256StarStarEngine &right) {
-    return left.state_ == right.state_;
-}
-
-inline bool operator!=(const Xoshiro256StarStarEngine &left, const Xoshiro256StarStarEngine &right) {
-    return !(left == right);
-}
-
-using RandomEngine = Xoshiro256StarStarEngine;
+using RandomEngine = Lehmer64Fast;
 
 inline int64_t random_i63(uint64_t u) { return u >> 1; }
 inline uint32_t random_u32(uint64_t u) { return u >> 32; }
@@ -158,7 +134,7 @@ inline int32_t random_i31(uint64_t u) { return u >> 33; }
 
 // uniformly distributed between [0,range)
 // Algorithm 5 from Lemire (2018) https://arxiv.org/pdf/1805.10941.pdf
-// modified by https://www.pcg-random.org/posts/bounded-rands.html
+// Modified by M.E. O'Neill (2018) https://www.pcg-random.org/posts/bounded-rands.html
 template <typename callback>
 uint64_t random_u64_range(uint64_t range, callback &get) {
     uint64_t x = get();
@@ -242,8 +218,12 @@ static_assert(std::is_same<uint64_t, detail::RandomEngine::result_type>::value,
               "The result type of RandomEngine is not a uint64_t.");
 
 class Random : public detail::RandomEngine {
-   public:
-    using detail::RandomEngine::RandomEngine;
+public:
+    using engine_type = detail::RandomEngine;
+    // import constructor
+    using engine_type::engine_type;
+    // import seed_type
+    using seed_type = engine_type::seed_type;
 
     uint64_t bits();
     uint64_t bits(int b);
@@ -259,8 +239,10 @@ class Random : public detail::RandomEngine {
 
     double exp(double mean = 1.0);
 
-    void Seed(const SeedSeq32 &ss);
+    template<size_t count>
+    void Seed(const SeedSeq<count> &ss);
     void Seed(const uint32_t s);
+    using engine_type::Seed;
 };
 
 // uniformly distributed between [0,2^64)
@@ -289,131 +271,158 @@ inline double Random::f53() { return detail::random_f53(bits()); }
 // exponential random value with specified mean. mean=1.0/rate
 inline double Random::exp(double mean) { return detail::random_exp_zig(*this) * mean; }
 
+// Think about using https://gist.github.com/imneme/540829265469e673d045
+// https://www.pcg-random.org/posts/simple-portable-cpp-seed-entropy.html
+// https://www.pcg-random.org/posts/cpps-random_device.html
+
 namespace detail {
+// Multilinear hash (https://arxiv.org/pdf/1202.4961.pdf)
+// Hash is based on a sequence of 64-bit numbers generated by Weyl sequence
+// Multilinear hash is (m_0 + sum(m_i*u_i) mod 2^64) / 2^32
+// m = buffer of 64-bit unsigned random values
+// u = 32-bit input values that are being hashed
+template<uint64_t INC, uint64_t INIT>
+struct hash_impl_t {
+    template<typename In1, typename In2, typename Out1, typename Out2>
+    void operator()(In1 it1, In2 it2, Out1 itA, Out2 itB) {
+        uint64_t w = INIT;
+        auto next_num = [&w]() {
+            w += INC;
+            return w;
+        };
 
-/*
-This is a fixed-increment version of Java 8's SplittableRandom generator
-See http://dx.doi.org/10.1145/2714064.2660195 and
-http://docs.oracle.com/javase/8/docs/api/java/util/SplittableRandom.html
-
-Based on code written in 2015 by Sebastiano Vigna (vigna@acm.org)
-*/
-
-inline uint64_t splitmix64(uint64_t *state) {
-    assert(state != nullptr);
-    *state += UINT64_C(0x9e3779b97f4a7c15);
-    uint64_t z = *state;
-    z = (z ^ (z >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
-    z = (z ^ (z >> 27)) * UINT64_C(0x94d049bb133111eb);
-    return z ^ (z >> 31);
-}
-
-}  // namespace detail
-
-// Create a sequence of 32-bit states based on hashing 32-bit seeds
-class SeedSeq32 {
-   public:
-    // Stores a vector of seeds in the object
-    template <typename... Args>
-    explicit SeedSeq32(Args &&... args) : seq_(std::forward<Args>(args)...) {}
-
-    // Generates a range of 32-bit states based on the stored seeds
-    // Uses a unique multilinear hash per state (https://arxiv.org/pdf/1202.4961.pdf)
-    // Hash is based on a sequence of random 64-bit numbers generated by splitmix64.
-    // splitmix64 is seeded by the initial values in the range
-    //
-    // Multilinear hash is (m_0 + sum(m_i*u_i) mod 2^64) / 2^32
-    // m = buffer of 64-bit unsigned random values
-    // u = 32-bit input values that are being hashed
-
-    template <typename It1, typename It2>
-    void Generate(It1 first, It2 last) const {
-        for(It1 it = first; it != last; ++it) {
-            auto s = static_cast<uint64_t>(*it);
-            uint64_t sum = detail::splitmix64(&s);
-            for(uint32_t u : seq_) {
-                sum += detail::splitmix64(&s) * u;
+        for(auto out = itA; out != itB; ++out) {
+            // hash input
+            uint64_t sum = next_num();
+            for(auto it = it1; it != it2; ++it) {
+                uint32_t u = *it;
+                sum += next_num()*u;
             }
-            // If seq_ ends in a zero, the hash is not unique.
+            // If input ends in a zero, the hash is not unique.
             // Add a final value to ensure that this doesn't happen.
-            sum += detail::splitmix64(&s) * 1;
-
+            sum += next_num() * 1;
             // final value
-            *it = static_cast<uint32_t>(sum >> 32);
+            *out = static_cast<uint32_t>(sum >> 32);
         }
     }
-
-    // Fills a range of states based on the stored seeds
-    template <typename Range>
-    void Generate(Range *range) const {
-        assert(range != nullptr);
-        Generate(std::begin(*range), std::end(*range));
-    }
-
-    // Generates a uint32_t seed based on the stored seeds
-    uint32_t GenerateOne(uint32_t s = 0xFD57D105u) const {
-        std::array<uint32_t, 1> u{s};
-        Generate(&u);
-        return u[0];
-    }
-
-   private:
-    std::vector<uint32_t> seq_;
 };
 
+using hash_implA = hash_impl_t<0x9e3779b97f4a7c15ULL, 0x3423da0b87484307ULL>;
+using hash_implB = hash_impl_t<0x9e3779b97f4a7c15ULL, 0xdf8b06c40fa44478ULL>;    
+}
+
+// SeedSeq is a finite entropy seed sequence.
+// Inspiration: https://www.pcg-random.org/posts/developing-a-seed_seq-alternative.html
+template<size_t count>
+class SeedSeq {
+public:
+    using result_type = uint32_t;
+
+private:
+    std::array<result_type, count> state_;
+
+public:
+    template<typename It1, typename It2>
+    SeedSeq(It1 begin, It2 end) {
+        Seed(begin, end);
+    }
+
+    template<typename T>
+    SeedSeq(std::initializer_list<T> init) {
+        Seed(init.begin(), init.end());
+    }
+
+    // Generates an internal state based on provided seeds
+    template<typename It1, typename It2>
+    void Seed(It1 begin, It2 end) {
+        detail::hash_implA hash;
+        hash(begin, end, state_.begin(), state_.end());
+    }
+
+    // Generates an external state based on the internal state
+    template<typename It1, typename It2>
+    void Generate(It1 begin, It2 end) const {
+        detail::hash_implB hash;
+        hash(state_.begin(), state_.end(), begin, end);
+    }
+};        
+
+using SeedSeq256 = SeedSeq<8>;
+
+
 inline void Random::Seed(uint32_t s) {
-    SeedSeq32 ss(1, s);
+    SeedSeq256 ss({s});
     Seed(ss);
 }
 
-inline void Random::Seed(const SeedSeq32 &ss) {
-    // checking for code assumptions
-    static_assert(sizeof(state_type::value_type) == 8, "state_type::value_type does not hold 64 bits");
-    static_assert(state_type{}.size() == 4, "state_type does not contain 4 values");
-
-    // starting values / hash seeds
-    std::array<uint32_t, 8> values = {0x9272B87Fu, 0xD9F64D09u, 0x6640D56Cu, 0x8CDA60ACu,
-                                      0xDEED25EDu, 0x8495FC63u, 0xAEA86A02u, 0x9F129AB9u};
-    ss.Generate(values.begin(), values.end());
-
-    // copy 8 32-bit seeds to 4 64-bit seeds
-    state_type seeds;
-    std::memcpy(seeds.data(), values.data(), seeds.size() * sizeof(seeds[0]));
-
-    InitState(seeds);
+template<size_t count>
+inline void Random::Seed(const SeedSeq<count> &ss) {
+    seed_type seed;
+    ss.Generate(seed.begin(), seed.end());
+    Seed(seed);
 }
 
-inline SeedSeq32 create_seed_seq() {
-    std::vector<uint32_t> ret;
+namespace details {
+    static constexpr uint32_t fnv(uint32_t hash, const char* pos)
+    {
+        return *pos == '\0' ? hash : fnv((hash * 16777619U) ^ *pos, pos+1);
+    }  
+}
 
-    // 1. current time
-    // 2. current pid
-    // 3. 64 random bits (if properly implemented)
-    // 4. 64 well-mixed bits on the end (just in case)
+// Based on ideas from https://www.pcg-random.org/posts/simple-portable-cpp-seed-entropy.html
+// Based on code from https://gist.github.com/imneme/540829265469e673d045
+inline SeedSeq256 auto_seed_seq() {
 
-#if __cpluscplus >= 201103L
-    uint64_t u = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-#else
-    uint64_t u = time(nullptr);
-#endif
-    ret.push_back(static_cast<uint32_t>(u));
-    ret.push_back(static_cast<uint32_t>(u >> 32));
+    auto crushto32 = [](auto value) -> uint32_t {
+        // Multilinear hash
+        uint64_t u = static_cast<uint64_t>(value);
+        uint64_t result = 0x80e25f91f5ba47eaULL;
+        result += 0x6db4dd6c7a89963cULL*static_cast<uint32_t>(u);
+        result += 0xd35f3cdd31f49ad8ULL*static_cast<uint32_t>(u>>32);
+        result += 0xc3275ada1d5eff71ULL*1;
+        return static_cast<uint32_t>(result >> 32);
+    };
 
+    // Constant that changes every time we compile the code
+    constexpr uint32_t compile_stamp = details::fnv(2166136261U, __DATE__ __TIME__ __FILE__);
+    
+    // get 32-bits of system-wide entropy once
+    static uint32_t random_int = std::random_device{}();
+    // increment it every call and don't worry about race conditions
+    random_int += 0xedf19156;
+
+    // heap randomness
+    void* malloc_addr = malloc(sizeof(int));
+    free(malloc_addr);
+    auto heap  = crushto32(malloc_addr);
+    auto stack = crushto32(&malloc_addr);
+
+    // High-resolution time information
+    auto hitime = crushto32(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    // The address of the couple of functions.
+    auto time_func = crushto32(&std::chrono::high_resolution_clock::now);
+    auto exit_func = crushto32(&_Exit);
+    auto self_func = crushto32(&auto_seed_seq);
+
+    // Thread ID
+    auto thread_id = crushto32(std::this_thread::get_id());
+
+    // PID
 #if defined(_WIN64) || defined(_WIN32)
-    ret.push_back(_getpid());
+    auto pid = crushto32(_getpid());
 #else
-    ret.push_back(getpid());
+    auto pid = crushto32(getpid());
 #endif
 
-#if __cpluscplus >= 201103L
-    ret.push_back(std::random_device{}());
-    ret.push_back(std::random_device{}());
+#if defined(__has_builtin) && __has_builtin(__builtin_readcyclecounter)
+    auto cpu = crushto32(__builtin_readcyclecounter());
+#else
+    uint32_t cpu = 0;
 #endif
 
-    ret.push_back(0xC8F978DBu);
-    ret.push_back(0x0B32F62Eu);
-
-    return SeedSeq32{std::move(ret)};
+    return SeedSeq256({compile_stamp, random_int, heap, stack, hitime,
+                       time_func, exit_func, self_func, thread_id, pid,
+                       cpu});
 }
 
 class AliasTable {
