@@ -1,5 +1,5 @@
 ---
-Checks:          'clang-diagnostic-*,clang-analyzer-*,cert-*,cppcoreguidelines-*,google-*,llvm-*,misc-*,modernize-*,performance-*,portability-*,readility-*,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-llvm-header-guard,-llvm-include-order,-clang-diagnostic-missing-braces,-misc-misplaced-widening-cast,-cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-bounds-constant-array-index'
+Checks:          'clang-diagnostic-*,clang-analyzer-*,cert-*,cppcoreguidelines-*,google-*,llvm-*,misc-*,modernize-*,performance-*,portability-*,readility-*,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-llvm-header-guard,-llvm-include-order,-clang-diagnostic-missing-braces,-misc-misplaced-widening-cast,-cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-bounds-constant-array-index,-modernize-use-trailing-return-type,-modernize-use-nodiscard'
 WarningsAsErrors: ''
 HeaderFilterRegex: '[^/]*'
 AnalyzeTemporaryDtors: false
@@ -88,7 +88,7 @@ CheckOptions:
   - key:             modernize-make-shared.IgnoreMacros
     value:           '1'
   - key:             modernize-make-shared.IncludeStyle
-    value:           '0'
+    value:           'llvm'
   - key:             modernize-make-shared.MakeSmartPtrFunction
     value:           'std::make_shared'
   - key:             modernize-make-shared.MakeSmartPtrFunctionHeader
@@ -96,7 +96,7 @@ CheckOptions:
   - key:             modernize-make-unique.IgnoreMacros
     value:           '1'
   - key:             modernize-make-unique.IncludeStyle
-    value:           '0'
+    value:           'llvm'
   - key:             modernize-make-unique.MakeSmartPtrFunction
     value:           'std::make_unique'
   - key:             modernize-make-unique.MakeSmartPtrFunctionHeader

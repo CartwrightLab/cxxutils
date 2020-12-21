@@ -1,12 +1,12 @@
-CXX?=c++
-CXXFLAGS?=-O2 -DNDEBUG
-CLANGTIDY?=clang-tidy
-CLANGFORMAT?=clang-format
+CXX=c++
+CXXFLAGS=-O2 -DNDEBUG
+CLANGTIDY=clang-tidy
+CLANGFORMAT=clang-format
 
-TIDYFILES=minion.hpp minion.cc
-FORMATFILES=minion.hpp minion.cc
+TIDYFILES=random.hpp random.cpp
+FORMATFILES=random.hpp random.cpp
 
-CXXFLAGS+= -std=c++11
+CXXFLAGS+= -std=c++17
 
 default: all
 
@@ -22,5 +22,5 @@ format:
 
 .PHONY: tidy format
 
-example: example.cc minion.hpp
+example: example.cc random.hpp
 	$(CXX) $(CXXFLAGS) -o $@ $<

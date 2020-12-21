@@ -1,18 +1,19 @@
 #include <cstdio>
 
-#include "minion.hpp"
+#include "random.hpp"
 
 // create a PRNG object with default seed
-minion::Random mrand;
+racutils::random::Random mrand;
 
 int main() {
-    // create a 64-bit pre seed
-    uint64_t seed64 = minion::create_seed_seq().GenerateU64();
-    // reduce seed to 31 bits (not needed, but easier for users to work with)
-    int seed = seed64 >> 33;
+    // create a 32-bit seed
+    auto seed_seq = racutils::random::auto_seed_seq();
     // seed mrand
-    mrand.Seed(seed);
-    printf("Seed is %d\n",seed);
+    mrand.Seed(seed_seq);
+    auto seed = mrand.GetSeed();
+    std::string seed_str = racutils::random::encode_seed(seed);
+
+    printf("Seed is %s\n",seed_str.c_str());
 
     // generate random values
     for(int i=0;i<1000;++i) {

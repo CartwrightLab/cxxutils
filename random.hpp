@@ -21,8 +21,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#ifndef MINIONRNG_HPP
-#define MINIONRNG_HPP
+#ifndef RACUTILS_RANDOM_HPP
+#define RACUTILS_RANDOM_HPP
 
 #include <array>
 #include <cassert>
@@ -41,20 +41,18 @@ SOFTWARE.
 #include <unistd.h>
 #endif
 
-#if __cpluscplus >= 201103L
 #include <chrono>
 #include <random>
-#else
-#include <ctime>
-#endif
+#include <string>
+#include <thread>
 
-namespace minion {
+namespace racutils::random {
 
-template<size_t count>
+template <size_t count>
 class SeedSeq;
 class Random;
 
-namespace detail {
+namespace details {
 
 /*
 A Fast 128-bit, Lehmer-style PRNG
@@ -65,51 +63,45 @@ https://www.pcg-random.org/posts/does-it-beat-the-minimal-standard.html
 */
 
 class Lehmer64Fast {
-public:
+   public:
     using result_type = uint64_t;
     using state_type = __uint128_t;
-    using seed_type = std::array<uint32_t,sizeof(state_type)/sizeof(uint32_t)>;
+    using seed_type = std::array<uint32_t, sizeof(state_type) / sizeof(uint32_t)>;
 
-private:
+   private:
     state_type state_;
     static constexpr auto MCG_MULT = 0xda942042e4dd58b5ULL;
-    static constexpr unsigned int STYPE_BITS = 8*sizeof(state_type);
-    static constexpr unsigned int RTYPE_BITS = 8*sizeof(result_type);
-    
-public:
-    static constexpr result_type min() { return static_cast<result_type>(0);  }
+    static constexpr unsigned int STYPE_BITS = 8 * sizeof(state_type);
+    static constexpr unsigned int RTYPE_BITS = 8 * sizeof(result_type);
+
+   public:
+    static constexpr result_type min() { return static_cast<result_type>(0); }
     static constexpr result_type max() { return static_cast<result_type>(~static_cast<result_type>(0)); }
 
-    Lehmer64Fast(state_type state = state_type(0x9f57c403d06c42fcULL)) {
-        SetState(state);
-    }
-    Lehmer64Fast(seed_type seed) {
-        Seed(seed);
-    }
+    explicit Lehmer64Fast(state_type state = state_type(0x9f57c403d06c42fcULL)) { SetState(state); }
+    explicit Lehmer64Fast(seed_type seed) { Seed(seed); }
 
-    void SetState(state_type state) {
-        // state cannot be odd.
-        state_ = state | 1;
-    }
+    void Seed(state_type state) { SetState(state); }
 
     void Seed(seed_type seed) {
         state_type state;
         std::memcpy(&state, &seed, sizeof(seed));
-        SetState(state);
+        Seed(state);
     }
 
-    void Advance() {
-        state_ *= MCG_MULT;
-    }
+    void Advance() { state_ *= MCG_MULT; }
 
     void Discard(size_t count) {
-        for(size_t k=0;k<count;++k) {
+        for(size_t k = 0; k < count; ++k) {
             Advance();
         }
     }
 
-    state_type GetState() const {
-        return state_;
+    state_type GetState() const { return state_; }
+    seed_type GetSeed() const {
+        seed_type seed;
+        std::memcpy(&seed, &state_, sizeof(seed));
+        return seed;
     }
 
     result_type operator()() {
@@ -117,12 +109,14 @@ public:
         return static_cast<result_type>(state_ >> (STYPE_BITS - RTYPE_BITS));
     }
 
-    bool operator==(const Lehmer64Fast& rhs) {
-        return (state_ == rhs.state_);
-    }
+    bool operator==(const Lehmer64Fast &rhs) { return (state_ == rhs.state_); }
 
-    bool operator!=(const Lehmer64Fast& rhs) {
-        return !operator==(rhs);
+    bool operator!=(const Lehmer64Fast &rhs) { return !operator==(rhs); }
+
+   private:
+    void SetState(state_type state) {
+        // state cannot be odd.
+        state_ = state | 1;
     }
 };
 
@@ -144,9 +138,9 @@ uint64_t random_u64_range(uint64_t range, callback &get) {
         // Calculate {uint64_t t = -range % range} avoiding divisions
         // as much as possible.
         uint64_t t = -range;
-        if( t >= range ) {
+        if(t >= range) {
             t -= range;
-            if( t >= range ) {
+            if(t >= range) {
                 t %= range;
             }
         }
@@ -167,7 +161,7 @@ static_assert(__FLOAT_WORD_ORDER == __BYTE_ORDER,
 
 inline double random_f52(uint64_t u) {
     u = (u >> 12) | UINT64_C(0x3FF0000000000000);
-    double d;
+    double d;  // NOLINT
     std::memcpy(&d, &u, sizeof(d));
     // d - (1.0-(DBL_EPSILON/2.0));
     return d - 0.99999999999999988;
@@ -211,15 +205,15 @@ inline double random_exp_zig(callback &get) {
     return random_exp_zig_internal(a, b, get);
 }
 
-}  // namespace detail
+}  // namespace details
 
 // code sanity check
-static_assert(std::is_same<uint64_t, detail::RandomEngine::result_type>::value,
+static_assert(std::is_same<uint64_t, details::RandomEngine::result_type>::value,
               "The result type of RandomEngine is not a uint64_t.");
 
-class Random : public detail::RandomEngine {
-public:
-    using engine_type = detail::RandomEngine;
+class Random : public details::RandomEngine {
+   public:
+    using engine_type = details::RandomEngine;
     // import constructor
     using engine_type::engine_type;
     // import seed_type
@@ -239,14 +233,14 @@ public:
 
     double exp(double mean = 1.0);
 
-    template<size_t count>
+    template <size_t count>
     void Seed(const SeedSeq<count> &ss);
     void Seed(const uint32_t s);
     using engine_type::Seed;
 };
 
 // uniformly distributed between [0,2^64)
-inline uint64_t Random::bits() { return detail::RandomEngine::operator()(); }
+inline uint64_t Random::bits() { return details::RandomEngine::operator()(); }
 // uniformly distributed between [0,2^b)
 inline uint64_t Random::bits(int b) { return bits() >> (64 - b); }
 
@@ -254,36 +248,36 @@ inline uint64_t Random::bits(int b) { return bits() >> (64 - b); }
 inline uint64_t Random::u64() { return bits(); }
 
 // uniformly distributed between [0,range)
-inline uint64_t Random::u64(uint64_t range) { return detail::random_u64_range(range, *this); }
+inline uint64_t Random::u64(uint64_t range) { return details::random_u64_range(range, *this); }
 
 // uniformly distributed between [0,2^32)
-inline uint32_t Random::u32() { return detail::random_u32(bits()); }
+inline uint32_t Random::u32() { return details::random_u32(bits()); }
 
 // uniformly distributed pair between [0,2^32)
-inline std::pair<uint32_t, uint32_t> Random::u32_pair() { return detail::random_u32_pair(bits()); }
+inline std::pair<uint32_t, uint32_t> Random::u32_pair() { return details::random_u32_pair(bits()); }
 
 // uniformly distributed between (0,1.0)
-inline double Random::f52() { return detail::random_f52(bits()); }
+inline double Random::f52() { return details::random_f52(bits()); }
 
 // uniformly distributed between [0,1.0)
-inline double Random::f53() { return detail::random_f53(bits()); }
+inline double Random::f53() { return details::random_f53(bits()); }
 
 // exponential random value with specified mean. mean=1.0/rate
-inline double Random::exp(double mean) { return detail::random_exp_zig(*this) * mean; }
+inline double Random::exp(double mean) { return details::random_exp_zig(*this) * mean; }
 
 // Think about using https://gist.github.com/imneme/540829265469e673d045
 // https://www.pcg-random.org/posts/simple-portable-cpp-seed-entropy.html
 // https://www.pcg-random.org/posts/cpps-random_device.html
 
-namespace detail {
+namespace details {
 // Multilinear hash (https://arxiv.org/pdf/1202.4961.pdf)
 // Hash is based on a sequence of 64-bit numbers generated by Weyl sequence
 // Multilinear hash is (m_0 + sum(m_i*u_i) mod 2^64) / 2^32
 // m = buffer of 64-bit unsigned random values
 // u = 32-bit input values that are being hashed
-template<uint64_t INC, uint64_t INIT>
+template <uint64_t INC, uint64_t INIT>
 struct hash_impl_t {
-    template<typename In1, typename In2, typename Out1, typename Out2>
+    template <typename In1, typename In2, typename Out1, typename Out2>
     void operator()(In1 it1, In2 it2, Out1 itA, Out2 itB) {
         uint64_t w = INIT;
         auto next_num = [&w]() {
@@ -296,7 +290,7 @@ struct hash_impl_t {
             uint64_t sum = next_num();
             for(auto it = it1; it != it2; ++it) {
                 uint32_t u = *it;
-                sum += next_num()*u;
+                sum += next_num() * u;
             }
             // If input ends in a zero, the hash is not unique.
             // Add a final value to ensure that this doesn't happen.
@@ -308,54 +302,53 @@ struct hash_impl_t {
 };
 
 using hash_implA = hash_impl_t<0x9e3779b97f4a7c15ULL, 0x3423da0b87484307ULL>;
-using hash_implB = hash_impl_t<0x9e3779b97f4a7c15ULL, 0xdf8b06c40fa44478ULL>;    
-}
+using hash_implB = hash_impl_t<0x9e3779b97f4a7c15ULL, 0xdf8b06c40fa44478ULL>;
+}  // namespace details
 
 // SeedSeq is a finite entropy seed sequence.
 // Inspiration: https://www.pcg-random.org/posts/developing-a-seed_seq-alternative.html
-template<size_t count>
+template <size_t count>
 class SeedSeq {
-public:
+   public:
     using result_type = uint32_t;
 
-private:
+   private:
     std::array<result_type, count> state_;
 
-public:
-    template<typename It1, typename It2>
+   public:
+    template <typename It1, typename It2>
     SeedSeq(It1 begin, It2 end) {
         Seed(begin, end);
     }
 
-    template<typename T>
+    template <typename T>
     SeedSeq(std::initializer_list<T> init) {
         Seed(init.begin(), init.end());
     }
 
     // Generates an internal state based on provided seeds
-    template<typename It1, typename It2>
+    template <typename It1, typename It2>
     void Seed(It1 begin, It2 end) {
-        detail::hash_implA hash;
+        details::hash_implA hash;
         hash(begin, end, state_.begin(), state_.end());
     }
 
     // Generates an external state based on the internal state
-    template<typename It1, typename It2>
+    template <typename It1, typename It2>
     void Generate(It1 begin, It2 end) const {
-        detail::hash_implB hash;
+        details::hash_implB hash;
         hash(state_.begin(), state_.end(), begin, end);
     }
-};        
+};
 
 using SeedSeq256 = SeedSeq<8>;
-
 
 inline void Random::Seed(uint32_t s) {
     SeedSeq256 ss({s});
     Seed(ss);
 }
 
-template<size_t count>
+template <size_t count>
 inline void Random::Seed(const SeedSeq<count> &ss) {
     seed_type seed;
     ss.Generate(seed.begin(), seed.end());
@@ -363,38 +356,80 @@ inline void Random::Seed(const SeedSeq<count> &ss) {
 }
 
 namespace details {
-    static constexpr uint32_t fnv(uint32_t hash, const char* pos)
-    {
-        return *pos == '\0' ? hash : fnv((hash * 16777619U) ^ *pos, pos+1);
-    }  
+inline std::string base58_encode(uint64_t u) {
+    const char *base58_alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+    std::string buffer(11, base58_alphabet[0]);
+    for(int i = 0; i < 11 && u != 0; ++i) {
+        buffer[10 - i] = base58_alphabet[u % 58];
+        u = u / 58;
+    }
+    return buffer;
 }
+}  // namespace details
+
+template <size_t COUNT>
+std::string encode_seed(const std::array<uint32_t, COUNT> &seed) {
+    std::string str;
+    if(seed.empty()) {
+        return {};
+    }
+    size_t body = 2 * (((seed.size() + 1) / 2) - 1);
+    size_t i = 0;
+    for(; i < body; i += 2) {
+        uint64_t u = static_cast<uint64_t>(seed[i]) + (static_cast<uint64_t>(seed[i + 1]) << 32);
+        str += details::base58_encode(u);
+        str += "-";
+    }
+    uint64_t u = static_cast<uint64_t>(seed[i++]);
+    if(i < seed.size()) {
+        u += (static_cast<uint64_t>(seed[i]) << 32);
+    }
+    str += details::base58_encode(u);
+
+    return str;
+}
+
+namespace details {
+static constexpr uint32_t fnv(uint32_t hash, const char *pos) {
+    return *pos == '\0' ? hash : fnv((hash * 16777619U) ^ *pos, pos + 1);
+}
+
+template <typename T>
+static uint64_t hash(T &&value) {
+    auto h =
+        std::hash<typename std::remove_reference<typename std::remove_cv<T>::type>::type>{}(std::forward<T>(value));
+    return static_cast<uint64_t>(h);
+}
+
+template <typename T>
+static uint32_t crushto32(T &&value) {
+    uint64_t u = details::hash(value);
+    // Multilinear hash
+    uint64_t result = 0x80e25f91f5ba47eaULL;
+    result += 0x6db4dd6c7a89963cULL * static_cast<uint32_t>(u);
+    result += 0xd35f3cdd31f49ad8ULL * static_cast<uint32_t>(u >> 32);
+    return static_cast<uint32_t>(result >> 32);
+};
+}  // namespace details
 
 // Based on ideas from https://www.pcg-random.org/posts/simple-portable-cpp-seed-entropy.html
 // Based on code from https://gist.github.com/imneme/540829265469e673d045
 inline SeedSeq256 auto_seed_seq() {
-
-    auto crushto32 = [](auto value) -> uint32_t {
-        // Multilinear hash
-        uint64_t u = static_cast<uint64_t>(value);
-        uint64_t result = 0x80e25f91f5ba47eaULL;
-        result += 0x6db4dd6c7a89963cULL*static_cast<uint32_t>(u);
-        result += 0xd35f3cdd31f49ad8ULL*static_cast<uint32_t>(u>>32);
-        result += 0xc3275ada1d5eff71ULL*1;
-        return static_cast<uint32_t>(result >> 32);
-    };
+    using details::crushto32;
 
     // Constant that changes every time we compile the code
     constexpr uint32_t compile_stamp = details::fnv(2166136261U, __DATE__ __TIME__ __FILE__);
-    
+
     // get 32-bits of system-wide entropy once
     static uint32_t random_int = std::random_device{}();
     // increment it every call and don't worry about race conditions
     random_int += 0xedf19156;
 
     // heap randomness
-    void* malloc_addr = malloc(sizeof(int));
-    free(malloc_addr);
-    auto heap  = crushto32(malloc_addr);
+    void *malloc_addr = malloc(sizeof(int));  // NOLINT
+    free(malloc_addr);                        // NOLINT
+    auto heap = crushto32(malloc_addr);
     auto stack = crushto32(&malloc_addr);
 
     // High-resolution time information
@@ -420,9 +455,8 @@ inline SeedSeq256 auto_seed_seq() {
     uint32_t cpu = 0;
 #endif
 
-    return SeedSeq256({compile_stamp, random_int, heap, stack, hitime,
-                       time_func, exit_func, self_func, thread_id, pid,
-                       cpu});
+    return SeedSeq256(
+        {compile_stamp, random_int, heap, stack, hitime, time_func, exit_func, self_func, thread_id, pid, cpu});
 }
 
 class AliasTable {
@@ -430,7 +464,7 @@ class AliasTable {
     AliasTable() = default;
 
     template <typename... Args>
-    explicit AliasTable(Args &&... args) {
+    explicit AliasTable(Args &&...args) {
         create(std::forward<Args>(args)...);
     }
 
@@ -439,13 +473,13 @@ class AliasTable {
 
     // create the alias table
     template <typename... Args>
-    void Create(Args &&... args) {
+    void Create(Args &&...args) {
         std::vector<double> vv(std::forward<Args>(args)...);
         CreateInplace(&vv);
     }
 
     int Get(uint64_t u) const {
-        auto yx = detail::random_u32_pair(u >> shr_);
+        auto yx = details::random_u32_pair(u >> shr_);
         return (yx.first < p_[yx.second]) ? yx.second : a_[yx.second];
     }
 
@@ -489,14 +523,14 @@ inline void AliasTable::CreateInplace(std::vector<double> *v) {
     //     g: current large value index
     //     m: current small value index
     //    mm: next possible small value index
-    size_t g, m, mm;
-    for(g = 0; g < sz && (*v)[g] < d; ++g) {
+    size_t g = 0, m = 0;
+    for(; g < sz && (*v)[g] < d; ++g) {
         /*noop*/;
     }
-    for(m = 0; m < sz && (*v)[m] >= d; ++m) {
+    for(; m < sz && (*v)[m] >= d; ++m) {
         /*noop*/;
     }
-    mm = m + 1;
+    size_t mm = m + 1;
 
     // construct table
     while(g < sz && m < sz) {
@@ -538,7 +572,7 @@ inline void AliasTable::CreateInplace(std::vector<double> *v) {
     }
 }
 
-}  // namespace minion
+}  // namespace racutils::random
 
-// MINIONRNG_HPP
+// RACUTILS_RANDOM
 #endif
