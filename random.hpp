@@ -115,7 +115,7 @@ class Lehmer64Fast {
 
    private:
     void SetState(state_type state) {
-        // state cannot be odd.
+        // state must be odd.
         state_ = state | 1;
     }
 };
