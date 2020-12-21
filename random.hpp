@@ -356,12 +356,12 @@ inline void Random::Seed(const SeedSeq<count> &ss) {
 }
 
 namespace details {
-inline std::string base58_encode(uint64_t u) {
+inline std::string base58_encode(uint32_t u) {
     const char *base58_alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
-    std::string buffer(11, base58_alphabet[0]);
-    for(int i = 0; i < 11 && u != 0; ++i) {
-        buffer[10 - i] = base58_alphabet[u % 58];
+    std::string buffer(6, base58_alphabet[0]);
+    for(int i = 0; i < 6 && u != 0; ++i) {
+        buffer[5 - i] = base58_alphabet[u % 58];
         u = u / 58;
     }
     return buffer;
@@ -370,23 +370,14 @@ inline std::string base58_encode(uint64_t u) {
 
 template <size_t COUNT>
 std::string encode_seed(const std::array<uint32_t, COUNT> &seed) {
-    std::string str;
     if(seed.empty()) {
         return {};
     }
-    size_t body = 2 * (((seed.size() + 1) / 2) - 1);
-    size_t i = 0;
-    for(; i < body; i += 2) {
-        uint64_t u = static_cast<uint64_t>(seed[i]) + (static_cast<uint64_t>(seed[i + 1]) << 32);
-        str += details::base58_encode(u);
+    std::string str = details::base58_encode(seed[0]);
+    for(int i=1;i<seed.size(); ++i) {
         str += "-";
+        str += details::base58_encode(seed[i]);
     }
-    uint64_t u = static_cast<uint64_t>(seed[i++]);
-    if(i < seed.size()) {
-        u += (static_cast<uint64_t>(seed[i]) << 32);
-    }
-    str += details::base58_encode(u);
-
     return str;
 }
 
