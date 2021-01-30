@@ -155,22 +155,16 @@ uint64_t random_u64_range(uint64_t range, callback &get) {
 
 inline std::pair<uint32_t, uint32_t> random_u32_pair(uint64_t u) { return {u, u >> 32}; }
 
-// sanity check
-static_assert(__FLOAT_WORD_ORDER == __BYTE_ORDER,
-              "random_double52 is not implemented if double and uint64_t have different byte orders");
-
-inline double random_f52(uint64_t u) {
-    u = (u >> 12) | UINT64_C(0x3FF0000000000000);
-    double d;  // NOLINT
-    std::memcpy(&d, &u, sizeof(d));
-    // d - (1.0-(DBL_EPSILON/2.0));
-    return d - 0.99999999999999988;
-}
-
 inline double random_f53(uint64_t u) {
     auto n = static_cast<int64_t>(u >> 11);
     return n / 9007199254740992.0;
 }
+
+inline double random_f52(uint64_t u) {
+    auto n = 1 | static_cast<int64_t>(u >> 11);
+    return n / 9007199254740992.0;
+}
+
 
 inline double random_exp_inv(double f) { return -log(f); }
 
