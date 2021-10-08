@@ -21,8 +21,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#ifndef RACUTILS_RANDOM_HPP
-#define RACUTILS_RANDOM_HPP
+#ifndef FRAGMITES_RANDOM_HPP
+#define FRAGMITES_RANDOM_HPP
 
 #include <array>
 #include <cassert>
@@ -46,11 +46,19 @@ SOFTWARE.
 #include <string>
 #include <thread>
 
-namespace racutils::random {
+namespace fragmites::random {
 
 template <size_t count>
 class SeedSeq;
 class Random;
+
+#if defined(__has_builtin) && __has_builtin(__builtin_expect)
+#define FRAGMITES_LIKELY(x) __builtin_expect(!!(x), 1)
+#define FRAGMITES_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#define FRAGMITES_LIKELY(x) !!(x)
+#define FRAGMITES_UNLIKELY(x) !!(x)
+#endif
 
 namespace details {
 
@@ -126,31 +134,61 @@ inline int64_t random_i63(uint64_t u) { return u >> 1; }
 inline uint32_t random_u32(uint64_t u) { return u >> 32; }
 inline int32_t random_i31(uint64_t u) { return u >> 33; }
 
-// uniformly distributed between [0,range)
-// Algorithm 5 from Lemire (2018) https://arxiv.org/pdf/1805.10941.pdf
-// Modified by M.E. O'Neill (2018) https://www.pcg-random.org/posts/bounded-rands.html
+// Use 128-bits to draw a random number between [0, range)
+// Algorithm from https://github.com/apple/swift/pull/39143
+// And https://github.com/KWillets/range_generator/blob/master/include/range_generator.hpp
+// TODO: validate this
 template <typename callback>
 uint64_t random_u64_range(uint64_t range, callback &get) {
-    uint64_t x = get();
-    __uint128_t m = static_cast<__uint128_t>(x) * static_cast<__uint128_t>(range);
-    auto l = static_cast<uint64_t>(m);
-    if(l < range) {
-        // Calculate {uint64_t t = -range % range} avoiding divisions
-        // as much as possible.
-        uint64_t t = -range;
-        if(t >= range) {
-            t -= range;
-            if(t >= range) {
-                t %= range;
-            }
-        }
-        while(l < t) {
-            x = get();
-            m = static_cast<__uint128_t>(x) * static_cast<__uint128_t>(range);
-            l = static_cast<uint64_t>(m);
-        }
+    uint64_t r1 = get();
+    __uint128_t x = r1;
+    x = x*range;
+    uint64_t y = static_cast<uint64_t>(x >> 64);
+    uint64_t f = static_cast<uint64_t>(x);
+    // Check if fraction + range can carry.
+    // (a+b < b) compiles to carry flag.
+    // Optimize for small ranges.
+    if(FRAGMITES_LIKELY(range + f >= f)) {
+        return y;
     }
-    return m >> 64;
+    uint64_t r2 = get();
+    x = r2;
+    x = x*range;
+    uint64_t z = static_cast<uint64_t>(x >> 64);
+
+    return y + ((z+f < f) ? 1 : 0);
+}
+
+// uniformly distributed between [0,range)
+// Algorithm from https://github.com/apple/swift/pull/39143
+// And https://github.com/KWillets/range_generator/blob/master/include/range_generator.hpp
+// TODO: validate this
+template <typename callback>
+uint64_t random_u64_range_exact(uint64_t range, callback &get) {
+    __uint128_t x = get();
+    x = x*range;
+    uint64_t y = static_cast<uint64_t>(x >> 64);
+    uint64_t f = static_cast<uint64_t>(x);
+    // Optimize for small ranges.
+    if(FRAGMITES_LIKELY(range + f >= f)) {
+        return y;
+    }
+    do {
+        x = get();
+        x = x*range;
+        uint64_t z = static_cast<uint64_t>(x >> 64);
+        z = z+f;
+        if(z < f) {
+            // we have carried
+            return y + 1;
+        } else if(z != -1) {
+            // we will never carry
+            break;
+        }
+        f = static_cast<uint64_t>(x);
+    } while( range + f < f );
+
+    return y;
 }
 
 inline std::pair<uint32_t, uint32_t> random_u32_pair(uint64_t u) { return {u, u >> 32}; }
@@ -161,7 +199,7 @@ inline double random_f53(uint64_t u) {
 }
 
 inline double random_f52(uint64_t u) {
-    auto n = 1 | static_cast<int64_t>(u >> 11);
+    auto n = static_cast<int64_t>(u >> 11) | 1;
     return n / 9007199254740992.0;
 }
 
@@ -193,7 +231,7 @@ template <typename callback>
 inline double random_exp_zig(callback &get) {
     int64_t a = random_i63(get());
     auto b = static_cast<int>(a & 255);
-    if(a <= ek[b]) {
+    if(FRAGMITES_LIKELY(a <= ek[b])) {
         return a * ew[b];
     }
     return random_exp_zig_internal(a, b, get);
@@ -557,7 +595,7 @@ inline void AliasTable::CreateInplace(std::vector<double> *v) {
     }
 }
 
-}  // namespace racutils::random
+}  // namespace fragmites::random
 
-// RACUTILS_RANDOM
+// FRAGMITES_RANDOM
 #endif
